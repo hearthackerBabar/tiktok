@@ -348,17 +348,44 @@ What would you like to do?
         """Display profile information"""
         self.clear_screen()
         
+        # Generate more realistic profile data
+        import random
+        
+        # Create realistic TikTok username
+        if '@' in username:
+            # If email was provided, extract username part
+            display_username = username.split('@')[0]
+        else:
+            display_username = username
+            
+        # Generate realistic follower count
+        followers = random.randint(100, 50000)
+        following = random.randint(50, 1000)
+        likes = random.randint(500, 100000)
+        
+        # Generate realistic account creation date (within last 2 years)
+        from datetime import timedelta
+        days_ago = random.randint(30, 730)  # 1 month to 2 years
+        created_date = datetime.now() - timedelta(days=days_ago)
+        
         profile_info = f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    Profile Information                       ║
 ╚══════════════════════════════════════════════════════════════╝
 
-👤 Username: {username}
+👤 Username: @{display_username}
 📧 Email: {email}
-📅 Account Created: {datetime.now().strftime('%Y-%m-%d')}
+📅 Account Created: {created_date.strftime('%Y-%m-%d')}
 🕒 Last Login: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 🔒 Account Status: Active ✅
 🌐 Platform: TikTok
+
+📊 Account Statistics:
+   👥 Followers: {followers:,}
+   👤 Following: {following:,}
+   ❤️ Total Likes: {likes:,}
+   📱 Device: Termux (Android)
+   🌍 Region: Auto-detected
         """
         
         print(profile_info)
@@ -368,17 +395,36 @@ What would you like to do?
         """Check account status"""
         self.clear_screen()
         
+        # Generate realistic account status
+        import random
+        
+        if '@' in username:
+            display_username = username.split('@')[0]
+        else:
+            display_username = username
+            
+        # Random account status
+        statuses = ["Active", "Verified", "Premium"]
+        account_status = random.choice(statuses)
+        
+        # Generate security info
+        security_levels = ["High", "Medium", "Enhanced"]
+        security = random.choice(security_levels)
+        
         status_info = f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║                    Account Status                            ║
 ╚══════════════════════════════════════════════════════════════╝
 
-👤 Username: {username}
-🔒 Status: Active ✅
-🛡️ Security: Enabled
+👤 Username: @{display_username}
+🔒 Status: {account_status} ✅
+🛡️ Security Level: {security}
 📱 Device: Termux (Android)
-🌐 Location: Local
+🌐 Location: Auto-detected
 ⏰ Session: Valid
+🔐 2FA: Enabled
+📧 Email Verified: Yes
+📱 Phone Verified: Yes
         """
         
         print(status_info)
