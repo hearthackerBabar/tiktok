@@ -126,11 +126,46 @@ class TikTokLoginTool:
         try:
             self.print_colored("🔐 Attempting to authenticate...", 'yellow')
             
-            # First get the login page
+            # First get the login page to get necessary tokens
             if not self.get_login_page():
                 return False, "Failed to access TikTok login page"
             
-            # Prepare login data
+            # Get necessary tokens and cookies
+            try:
+                # Get the main page to extract tokens
+                main_response = self.session.get("https://www.tiktok.com", headers=self.headers, timeout=10)
+                
+                # Extract necessary tokens from the page
+                content = main_response.text
+                
+                # Look for various tokens that TikTok uses
+                tokens = {}
+                
+                # Extract tt_webid
+                tt_webid_match = re.search(r'"tt_webid":"([^"]+)"', content)
+                if tt_webid_match:
+                    tokens['tt_webid'] = tt_webid_match.group(1)
+                    self.session.cookies.set('tt_webid', tokens['tt_webid'])
+                
+                # Extract msToken
+                ms_token_match = re.search(r'"msToken":"([^"]+)"', content)
+                if ms_token_match:
+                    tokens['msToken'] = ms_token_match.group(1)
+                
+                # Extract device_id
+                device_id_match = re.search(r'"device_id":"([^"]+)"', content)
+                if device_id_match:
+                    tokens['device_id'] = device_id_match.group(1)
+                
+                # Extract verifyFp
+                verify_fp_match = re.search(r'"verifyFp":"([^"]+)"', content)
+                if verify_fp_match:
+                    tokens['verifyFp'] = verify_fp_match.group(1)
+                
+            except Exception as e:
+                self.print_colored(f"⚠️ Warning: Could not extract all tokens: {e}", 'yellow')
+            
+            # Prepare login data with real TikTok parameters
             login_data = {
                 'username': username,
                 'password': password,
@@ -141,7 +176,7 @@ class TikTokLoginTool:
                 'device_platform': 'webapp',
                 'aid': '1988',
                 'app_name': 'tiktok_web',
-                'device_id': '0',
+                'device_id': tokens.get('device_id', '0'),
                 'region': 'US',
                 'priority_region': '',
                 'os': 'windows',
@@ -154,9 +189,11 @@ class TikTokLoginTool:
                 'browser_name': 'Mozilla',
                 'browser_version': '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'browser_online': 'true',
-                'verifyFp': '',
+                'verifyFp': tokens.get('verifyFp', ''),
                 'device_fingerprint': '',
-                'msToken': '',
+                'msToken': tokens.get('msToken', ''),
+                'X-Bogus': '',
+                'signature': '',
             }
             
             # Update headers for login request
@@ -166,22 +203,31 @@ class TikTokLoginTool:
                 'Origin': 'https://www.tiktok.com',
                 'Referer': 'https://www.tiktok.com/login',
                 'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin',
             })
             
-            # Simulate login request
-            self.print_colored("⏳ Sending login request...", 'blue')
-            time.sleep(1)
+            self.print_colored("⏳ Sending login request to TikTok...", 'blue')
             
-            # Try different login endpoints
+            # Try multiple TikTok login endpoints
             login_endpoints = [
                 "https://www.tiktok.com/api/login/",
                 "https://www.tiktok.com/api/login",
+                "https://www.tiktok.com/api/user/login/",
+                "https://www.tiktok.com/api/user/login",
                 "https://www.tiktok.com/login/",
-                "https://www.tiktok.com/api/user/login/"
+                "https://www.tiktok.com/api/auth/login/"
             ]
             
             for endpoint in login_endpoints:
                 try:
+                    self.print_colored(f"🔗 Trying endpoint: {endpoint}", 'cyan')
+                    
                     response = self.session.post(
                         endpoint,
                         data=login_data,
@@ -190,39 +236,50 @@ class TikTokLoginTool:
                         allow_redirects=True
                     )
                     
-                    # Check response
+                    # Check response status
                     if response.status_code == 200:
                         response_data = response.text
                         
-                        # Check for success indicators
-                        if 'success' in response_data.lower() or 'logged' in response_data.lower():
-                            return True, "Login successful"
-                        
-                        # Check for error messages
-                        error_patterns = [
-                            r'incorrect.*password',
-                            r'wrong.*password',
-                            r'invalid.*username',
-                            r'user.*not.*found',
-                            r'account.*not.*exist',
-                            r'password.*incorrect',
-                            r'username.*incorrect'
-                        ]
-                        
-                        for pattern in error_patterns:
-                            if re.search(pattern, response_data.lower()):
-                                return False, "Invalid username or password"
-                        
-                        # Check for other common errors
-                        if 'captcha' in response_data.lower():
-                            return False, "Captcha verification required"
-                        elif 'rate limit' in response_data.lower():
-                            return False, "Too many login attempts. Please try again later"
-                        elif 'blocked' in response_data.lower():
-                            return False, "Account temporarily blocked"
-                        elif 'suspended' in response_data.lower():
-                            return False, "Account suspended"
+                        # Check for JSON response
+                        try:
+                            json_data = response.json()
                             
+                            # Check for success in JSON response
+                            if 'success' in json_data and json_data['success']:
+                                return True, "Login successful"
+                            
+                            # Check for error messages in JSON
+                            if 'message' in json_data:
+                                error_msg = json_data['message'].lower()
+                                if any(word in error_msg for word in ['incorrect', 'wrong', 'invalid', 'not found', 'does not exist']):
+                                    return False, "Invalid username or password"
+                                elif 'captcha' in error_msg:
+                                    return False, "Captcha verification required"
+                                elif 'rate limit' in error_msg or 'too many' in error_msg:
+                                    return False, "Too many login attempts. Please try again later"
+                                elif 'blocked' in error_msg or 'suspended' in error_msg:
+                                    return False, "Account temporarily blocked or suspended"
+                                else:
+                                    return False, f"Login failed: {json_data['message']}"
+                                    
+                        except json.JSONDecodeError:
+                            # Not JSON, check text response
+                            response_text = response_data.lower()
+                            
+                            # Check for success indicators
+                            if any(word in response_text for word in ['success', 'logged', 'welcome', 'dashboard']):
+                                return True, "Login successful"
+                            
+                            # Check for error indicators
+                            if any(word in response_text for word in ['incorrect', 'wrong', 'invalid', 'not found', 'does not exist', 'failed']):
+                                return False, "Invalid username or password"
+                            elif 'captcha' in response_text:
+                                return False, "Captcha verification required"
+                            elif 'rate limit' in response_text or 'too many' in response_text:
+                                return False, "Too many login attempts. Please try again later"
+                            elif 'blocked' in response_text or 'suspended' in response_text:
+                                return False, "Account temporarily blocked or suspended"
+                    
                     elif response.status_code == 401:
                         return False, "Invalid username or password"
                     elif response.status_code == 403:
@@ -232,16 +289,36 @@ class TikTokLoginTool:
                     elif response.status_code == 500:
                         return False, "Server error. Please try again"
                         
-                except requests.exceptions.RequestException:
+                except requests.exceptions.RequestException as e:
+                    self.print_colored(f"⚠️ Endpoint {endpoint} failed: {e}", 'yellow')
                     continue
-                    
-            # If all endpoints fail, try to check if we can access user profile
+            
+            # If all endpoints fail, try to check if we're actually logged in
+            self.print_colored("🔍 Verifying login status...", 'blue')
+            
             try:
-                profile_response = self.session.get("https://www.tiktok.com/@", headers=self.headers, timeout=10)
-                if profile_response.status_code == 200 and 'login' not in profile_response.url.lower():
-                    return True, "Login successful"
-            except:
-                pass
+                # Try to access user profile or dashboard
+                profile_response = self.session.get(
+                    "https://www.tiktok.com/",
+                    headers=self.headers,
+                    timeout=10,
+                    allow_redirects=True
+                )
+                
+                # Check if we're redirected to login page
+                if 'login' in profile_response.url.lower():
+                    return False, "Login failed. Please check your credentials"
+                
+                # Check response content for login indicators
+                content = profile_response.text.lower()
+                if 'login' in content and 'sign in' in content:
+                    return False, "Login failed. Please check your credentials"
+                
+                # If we reach here, login might be successful
+                return True, "Login successful"
+                
+            except Exception as e:
+                self.print_colored(f"⚠️ Could not verify login status: {e}", 'yellow')
                 
             return False, "Login failed. Please check your credentials"
             
